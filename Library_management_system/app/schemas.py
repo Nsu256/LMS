@@ -27,3 +27,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     student: StudentPublic
+
+
+class RegisterResponse(BaseModel):
+    message: str
