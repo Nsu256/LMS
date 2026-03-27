@@ -13,6 +13,10 @@ class StudentLoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
 class StudentPublic(BaseModel):
     id: int
     full_name: str

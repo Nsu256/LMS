@@ -8,6 +8,7 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_TO_A_LONG_RANDOM_SECRET")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 EMAIL_VERIFICATION_EXPIRE_MINUTES = int(os.getenv("JWT_EMAIL_VERIFY_EXPIRE_MINUTES", "30"))
+PASSWORD_RESET_EXPIRE_MINUTES = int(os.getenv("JWT_PASSWORD_RESET_EXPIRE_MINUTES", "15"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -47,4 +48,21 @@ def decode_email_verification_token(token: str) -> dict:
     payload = decode_token(token)
     if payload.get("purpose") != "email_verification":
         raise ValueError("Invalid verification token")
+    return payload
+
+
+def create_password_reset_token(subject: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+    payload = {
+        "sub": subject,
+        "purpose": "password_reset",
+        "exp": expire,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> dict:
+    payload = decode_token(token)
+    if payload.get("purpose") != "password_reset":
+        raise ValueError("Invalid password reset token")
     return payload

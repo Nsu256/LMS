@@ -3,12 +3,19 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.mailer import send_verification_email
+from app.mailer import send_password_reset_email, send_verification_email
 from app.models import Student
-from app.schemas import RegisterResponse, StudentLoginRequest, StudentRegisterRequest, TokenResponse
+from app.schemas import (
+    ForgotPasswordRequest,
+    RegisterResponse,
+    StudentLoginRequest,
+    StudentRegisterRequest,
+    TokenResponse,
+)
 from app.security import (
     create_access_token,
     create_email_verification_token,
+    create_password_reset_token,
     decode_email_verification_token,
     hash_password,
     verify_password,
@@ -109,6 +116,23 @@ def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=str(student.id))
     return TokenResponse(access_token=token, student=student)
+
+
+@router.post("/forgot-password", response_model=RegisterResponse)
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.email == payload.email).first()
+
+    if student:
+        reset_token = create_password_reset_token(subject=str(student.id))
+        try:
+            send_password_reset_email(student.email, reset_token)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Password reset email could not be sent",
+            )
+
+    return RegisterResponse(message="If the account exists, a password reset email has been sent")
 
 
 @router.get("/verify-email")
