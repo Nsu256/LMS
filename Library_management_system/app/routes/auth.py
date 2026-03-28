@@ -39,6 +39,7 @@ def _build_verification_claims(payload: StudentRegisterRequest) -> dict:
     }
 
 
+
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 def register_student(payload: StudentRegisterRequest, db: Session = Depends(get_db)):
     if not payload.email.lower().endswith("@gmail.com"):
@@ -72,6 +73,7 @@ def register_student(payload: StudentRegisterRequest, db: Session = Depends(get_
     return RegisterResponse(message="Verification email sent. Please verify to complete registration")
 
 
+
 @router.post("/resend-verification", response_model=RegisterResponse)
 def resend_verification_email(payload: StudentRegisterRequest, db: Session = Depends(get_db)):
     if not payload.email.lower().endswith("@gmail.com"):
@@ -102,6 +104,7 @@ def resend_verification_email(payload: StudentRegisterRequest, db: Session = Dep
         )
 
     return RegisterResponse(message="Verification email resent. Please verify to complete registration")
+
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -140,6 +143,7 @@ def login_users(payload: StudentLoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token, user_type="librarian", librarian=librarian)
 
 
+
 @router.post("/logout", response_model=RegisterResponse)
 def logout_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -151,6 +155,7 @@ def logout_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
         )
 
     return RegisterResponse(message="Logged out successfully")
+
 
 
 @router.post("/forgot-password", response_model=RegisterResponse)
@@ -173,6 +178,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
         )
 
     return RegisterResponse(message="Password reset email has been sent")
+
 
 
 @router.post("/reset-password", response_model=RegisterResponse)
@@ -203,6 +209,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
 
     return RegisterResponse(message="Password reset successful")
+
 
 
 @router.post("/change-password", response_model=RegisterResponse)
@@ -249,6 +256,7 @@ def change_password(
     db.commit()
 
     return RegisterResponse(message="Password changed successfully")
+
 
 
 @router.get("/verify-email")

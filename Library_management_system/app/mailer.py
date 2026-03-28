@@ -32,6 +32,7 @@ def send_verification_email(recipient_email: str, token: str) -> None:
         f"{verification_link}\n"
     )
 
+
     with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
         server.ehlo()
         if smtp_use_tls:
@@ -42,6 +43,7 @@ def send_verification_email(recipient_email: str, token: str) -> None:
             server.login(smtp_user, smtp_password)
 
         server.send_message(message)
+
 
 
 def send_password_reset_email(recipient_email: str, token: str) -> None:
