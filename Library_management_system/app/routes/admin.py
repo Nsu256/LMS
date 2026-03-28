@@ -12,6 +12,7 @@ from app.schemas import (
     BookUpdate,
     DenyBorrowRequest,
     FineCreate,
+    FinePublic,
     BorrowRequestWithStudentBook,
     BorrowRecordWithStudentBook,
     StudentWithFines,
