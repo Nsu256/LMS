@@ -214,3 +214,87 @@ class StudentFineClearanceResponse(BaseModel):
     student_id: int
     cleared_fines_count: int
     total_cleared_amount: float
+
+
+# ==================== STATISTICS SCHEMAS ====================
+
+class TopBorrower(BaseModel):
+    student_id: int
+    full_name: str
+    email: str
+    borrow_count: int
+
+
+class StudentStats(BaseModel):
+    total_active_students: int
+    top_borrowers: list[TopBorrower]
+    defaulters_count: int
+    compliance_rate: float
+
+
+class MostBorrowedBook(BaseModel):
+    book_id: int
+    title: str
+    author: str
+    borrow_count: int
+    availability_percentage: float
+
+
+class BookInventoryStats(BaseModel):
+    total_books: int
+    total_copies: int
+    available_copies: int
+    borrowed_copies: int
+    books_with_zero_availability: int
+
+
+class BorrowingTrend(BaseModel):
+    date: str
+    borrow_count: int
+    return_count: int
+    new_requests: int
+
+
+class BorrowingTrendsStats(BaseModel):
+    average_borrow_duration_days: float
+    on_time_return_rate: float
+    late_return_rate: float
+    trends: list[BorrowingTrend]
+
+
+class FineStats(BaseModel):
+    total_outstanding_fines: float
+    total_collected_fines: float
+    fine_count_unpaid: int
+    fine_count_paid: int
+    average_fine_amount: float
+
+
+class TopDefaulter(BaseModel):
+    student_id: int
+    full_name: str
+    email: str
+    outstanding_amount: float
+    overdue_books_count: int
+
+
+class OverdueStats(BaseModel):
+    total_overdue_books: int
+    books_1_to_7_days_late: int
+    books_8_to_14_days_late: int
+    books_15_plus_days_late: int
+    overdue_by_student: list[TopDefaulter]
+
+
+class SystemHealthStats(BaseModel):
+    pending_requests: int
+    active_borrows: int
+    average_approval_time_hours: float
+    system_uptime: str
+
+
+class DetailedReport(BaseModel):
+    title: str
+    generated_at: datetime
+    total_records: int
+    data: list[dict]

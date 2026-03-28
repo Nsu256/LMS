@@ -4,6 +4,7 @@ from app.database import Base, engine
 from app.routes.auth import router as auth_router
 from app.routes.books import router as books_router
 from app.routes.admin import router as admin_router
+from app.routes.stats import router as stats_router
 
 app = FastAPI(title="Library Management System API", version="1.0.0")
 
@@ -21,3 +22,4 @@ def root():
 app.include_router(auth_router)
 app.include_router(books_router)
 app.include_router(admin_router)
+app.include_router(stats_router)
