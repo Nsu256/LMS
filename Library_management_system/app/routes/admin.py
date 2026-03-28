@@ -1,6 +1,9 @@
-from datetime import datetime, timezone
+import csv
+from datetime import date, datetime, timezone
+from io import BytesIO, StringIO
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
@@ -98,6 +101,193 @@ def get_current_librarian(credentials: HTTPAuthorizationCredentials = Depends(se
         )
 
     return librarian
+
+
+def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    if month < 1 or month > 12:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="month must be between 1 and 12",
+        )
+
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    return start, end
+
+
+def _fetch_report_rows(
+    report_type: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+) -> list[dict]:
+    if report_type == "students":
+        students = (
+            db.query(Student)
+            .filter(Student.created_at >= start_date, Student.created_at < end_date)
+            .order_by(Student.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": s.id,
+                "full_name": s.full_name,
+                "email": s.email,
+                "registration_number": s.registration_number,
+                "is_active": s.is_active,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in students
+        ]
+
+    if report_type == "books":
+        rows = (
+            db.query(Book, Category.name)
+            .outerjoin(BookCategory, BookCategory.book_id == Book.id)
+            .outerjoin(Category, Category.id == BookCategory.category_id)
+            .filter(Book.created_at >= start_date, Book.created_at < end_date)
+            .order_by(Book.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": book.id,
+                "title": book.title,
+                "author": book.author,
+                "isbn": book.isbn,
+                "publication_year": book.publication_year,
+                "category_name": category_name,
+                "total_copies": book.total_copies,
+                "available_copies": book.available_copies,
+                "is_available": book.is_available,
+                "created_at": book.created_at.isoformat() if book.created_at else None,
+            }
+            for book, category_name in rows
+        ]
+
+    if report_type in {"borrowed_books", "returned_books", "unreturned_books"}:
+        query = (
+            db.query(BorrowRecord, Student.full_name, Student.email, Book.title, Book.author)
+            .join(Student, Student.id == BorrowRecord.student_id)
+            .join(Book, Book.id == BorrowRecord.book_id)
+        )
+
+        if report_type == "borrowed_books":
+            query = query.filter(BorrowRecord.borrowed_at >= start_date, BorrowRecord.borrowed_at < end_date)
+
+        if report_type == "returned_books":
+            query = query.filter(
+                BorrowRecord.is_returned == True,
+                BorrowRecord.returned_at >= start_date,
+                BorrowRecord.returned_at < end_date,
+            )
+
+        if report_type == "unreturned_books":
+            query = query.filter(
+                BorrowRecord.is_returned == False,
+                BorrowRecord.borrowed_at >= start_date,
+                BorrowRecord.borrowed_at < end_date,
+            )
+
+        rows = query.order_by(BorrowRecord.borrowed_at.desc()).all()
+        return [
+            {
+                "borrow_record_id": borrow_record.id,
+                "student_id": borrow_record.student_id,
+                "student_name": student_name,
+                "student_email": student_email,
+                "book_id": borrow_record.book_id,
+                "book_title": book_title,
+                "book_author": book_author,
+                "borrowed_at": borrow_record.borrowed_at.isoformat() if borrow_record.borrowed_at else None,
+                "due_date": borrow_record.due_date.isoformat() if borrow_record.due_date else None,
+                "returned_at": borrow_record.returned_at.isoformat() if borrow_record.returned_at else None,
+                "is_returned": borrow_record.is_returned,
+            }
+            for borrow_record, student_name, student_email, book_title, book_author in rows
+        ]
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            "type must be one of students, books, borrowed_books, "
+            "returned_books, unreturned_books"
+        ),
+    )
+
+
+def _build_excel_bytes(rows: list[dict], report_type: str) -> bytes:
+    try:
+        from openpyxl import Workbook
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="openpyxl is required for excel export",
+        ) from exc
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = f"{report_type}_report"
+
+    if not rows:
+        sheet.append(["No data"])
+    else:
+        headers = list(rows[0].keys())
+        sheet.append(headers)
+        for row in rows:
+            sheet.append([row.get(header) for header in headers])
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _build_pdf_bytes(rows: list[dict], report_type: str, start_date: datetime, end_date: datetime) -> bytes:
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="reportlab is required for pdf export",
+        ) from exc
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 40
+
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.drawString(40, y, f"LMS Monthly {report_type.capitalize()} Report")
+    y -= 20
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(40, y, f"Range: {start_date.date()} to {end_date.date()} (exclusive)")
+    y -= 20
+    pdf.drawString(40, y, f"Total records: {len(rows)}")
+    y -= 25
+
+    if not rows:
+        pdf.drawString(40, y, "No data")
+    else:
+        headers = list(rows[0].keys())
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(40, y, " | ".join(headers[:6]))
+        y -= 15
+        pdf.setFont("Helvetica", 8)
+        for row in rows:
+            line = " | ".join(str(row.get(header, ""))[:20] for header in headers[:6])
+            pdf.drawString(40, y, line)
+            y -= 12
+            if y < 40:
+                pdf.showPage()
+                y = height - 40
+                pdf.setFont("Helvetica", 8)
+
+    pdf.save()
+    return buffer.getvalue()
 
 
 # ==================== BOOK MANAGEMENT ====================
@@ -609,4 +799,65 @@ def generate_borrowing_report(
         "total_overdue_books": overdue_books,
         "total_active_students": active_students,
         "total_outstanding_fines": outstanding_fines,
+    }
+
+
+@router.get("/reports/export")
+def export_monthly_report(
+    format: str = Query(..., pattern="^(pdf|excel)$"),
+    type: str = Query(..., pattern="^(students|books|borrowed_books|returned_books|unreturned_books)$"),
+    year: int | None = Query(None, ge=2000, le=2100),
+    month: int | None = Query(None, ge=1, le=12),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    selected_year = year or now.year
+    selected_month = month or now.month
+    start_date, end_date = _month_bounds(selected_year, selected_month)
+
+    rows = _fetch_report_rows(type, start_date, end_date, db)
+    filename_base = f"{type}_report_{selected_year}_{selected_month:02d}"
+
+    if format == "excel":
+        content = _build_excel_bytes(rows, type)
+        return StreamingResponse(
+            BytesIO(content),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename_base}.xlsx"},
+        )
+
+    content = _build_pdf_bytes(rows, type, start_date, end_date)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename_base}.pdf"},
+    )
+
+
+@router.get("/reports/custom")
+def custom_date_range_report(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    type: str = Query(..., pattern="^(students|books|borrowed_books|returned_books|unreturned_books)$"),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    if date_to < date_from:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_to must be greater than or equal to date_from",
+        )
+
+    start_date = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    end_date = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+    end_date = end_date.replace(microsecond=0)
+
+    rows = _fetch_report_rows(type, start_date, end_date, db)
+    return {
+        "report_type": type,
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "total_records": len(rows),
+        "rows": rows,
     }
