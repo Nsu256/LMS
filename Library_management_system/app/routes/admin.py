@@ -16,6 +16,7 @@ from app.schemas import (
     BorrowRecordWithStudentBook,
     StudentWithFines,
     BorrowingReport,
+    StudentFineClearanceResponse,
     MessageResponse,
 )
 from app.security import decode_token
@@ -201,6 +202,50 @@ def list_all_students(
         })
 
     return result
+
+
+@router.post("/students/{student_id}/clear", response_model=StudentFineClearanceResponse)
+def clear_student_fines(
+    student_id: int,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db)
+):
+    """Clear all outstanding fines for a student after physical payment confirmation."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    unpaid_fines = db.query(Fine).filter(
+        Fine.student_id == student_id,
+        Fine.is_paid == False,
+    ).all()
+
+    if not unpaid_fines:
+        return StudentFineClearanceResponse(
+            message="Student has no outstanding fines",
+            student_id=student_id,
+            cleared_fines_count=0,
+            total_cleared_amount=0.0,
+        )
+
+    now = datetime.now(timezone.utc)
+    total_cleared_amount = 0.0
+    for fine in unpaid_fines:
+        total_cleared_amount += float(fine.amount)
+        fine.is_paid = True
+        fine.paid_at = now
+
+    db.commit()
+
+    return StudentFineClearanceResponse(
+        message="Student fines cleared successfully",
+        student_id=student_id,
+        cleared_fines_count=len(unpaid_fines),
+        total_cleared_amount=total_cleared_amount,
+    )
 
 
 # ==================== BORROW REQUEST MANAGEMENT ====================

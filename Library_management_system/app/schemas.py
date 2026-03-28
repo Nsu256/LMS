@@ -207,3 +207,10 @@ class BorrowingReport(BaseModel):
     total_overdue_books: int
     total_active_students: int
     total_outstanding_fines: float
+
+
+class StudentFineClearanceResponse(BaseModel):
+    message: str
+    student_id: int
+    cleared_fines_count: int
+    total_cleared_amount: float
