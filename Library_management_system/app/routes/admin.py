@@ -58,6 +58,7 @@ def _book_to_public(book: Book, db: Session) -> dict:
         "author": book.author,
         "isbn": book.isbn,
         "description": book.description,
+        "publication_year": book.publication_year,
         "total_copies": book.total_copies,
         "available_copies": book.available_copies,
         "is_available": book.is_available,
@@ -129,6 +130,7 @@ def add_book_to_catalog(
         author=payload.author,
         isbn=payload.isbn,
         description=payload.description,
+        publication_year=payload.publication_year,
         total_copies=payload.total_copies,
         available_copies=payload.total_copies,
         is_available=True,
@@ -179,6 +181,8 @@ def edit_book_details(
         book.isbn = payload.isbn
     if payload.description is not None:
         book.description = payload.description
+    if payload.publication_year is not None:
+        book.publication_year = payload.publication_year
     if payload.total_copies:
         # Adjust available copies if total changed
         diff = payload.total_copies - book.total_copies

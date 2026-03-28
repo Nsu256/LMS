@@ -60,6 +60,8 @@ class Book(Base):
 
     description: Mapped[str] = mapped_column(String(1000), nullable=True)
 
+    publication_year: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
+
     total_copies: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     available_copies: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

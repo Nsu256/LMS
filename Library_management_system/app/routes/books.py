@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -45,6 +46,7 @@ def _book_to_public(book: Book, category_map: dict[int, tuple[int | None, str | 
         "author": book.author,
         "isbn": book.isbn,
         "description": book.description,
+        "publication_year": book.publication_year,
         "total_copies": book.total_copies,
         "available_copies": book.available_copies,
         "is_available": book.is_available,
@@ -106,6 +108,87 @@ def list_available_books(
 def list_book_categories(db: Session = Depends(get_db)):
     categories = db.query(Category).order_by(Category.name.asc()).all()
     return categories
+
+
+@router.get("/search", response_model=list[BookPublic])
+def advanced_search_books(
+    title: str = Query("", min_length=0),
+    author: str = Query("", min_length=0),
+    isbn: str = Query("", min_length=0),
+    category: str = Query("", min_length=0),
+    year_from: int | None = Query(None, ge=1000, le=2100),
+    year_to: int | None = Query(None, ge=1000, le=2100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Book)
+
+    if title:
+        query = query.filter(Book.title.ilike(f"%{title}%"))
+    if author:
+        query = query.filter(Book.author.ilike(f"%{author}%"))
+    if isbn:
+        query = query.filter(Book.isbn.ilike(f"%{isbn}%"))
+    if year_from is not None:
+        query = query.filter(Book.publication_year >= year_from)
+    if year_to is not None:
+        query = query.filter(Book.publication_year <= year_to)
+
+    if category:
+        query = (
+            query.join(BookCategory, BookCategory.book_id == Book.id)
+            .join(Category, Category.id == BookCategory.category_id)
+            .filter(Category.name.ilike(f"%{category}%"))
+        )
+
+    books = query.order_by(Book.title.asc()).offset(skip).limit(limit).all()
+    category_map = _build_category_map([book.id for book in books], db)
+    return [_book_to_public(book, category_map) for book in books]
+
+
+@router.get("/search/suggestions", response_model=list[str])
+def search_suggestions(
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(10, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    pattern = f"%{q}%"
+
+    book_rows = (
+        db.query(Book.title, Book.author)
+        .filter(
+            or_(
+                Book.title.ilike(pattern),
+                Book.author.ilike(pattern),
+                Book.isbn.ilike(pattern),
+            )
+        )
+        .order_by(Book.title.asc())
+        .limit(limit)
+        .all()
+    )
+
+    category_rows = (
+        db.query(Category.name)
+        .filter(Category.name.ilike(pattern))
+        .order_by(Category.name.asc())
+        .limit(limit)
+        .all()
+    )
+
+    suggestions: list[str] = []
+    for title_value, author_value in book_rows:
+        if title_value and title_value not in suggestions:
+            suggestions.append(title_value)
+        if author_value and author_value not in suggestions:
+            suggestions.append(author_value)
+
+    for (category_name,) in category_rows:
+        if category_name and category_name not in suggestions:
+            suggestions.append(category_name)
+
+    return suggestions[:limit]
 
 
 @router.get("/category/{category_id}", response_model=list[BookPublic])

@@ -66,6 +66,7 @@ class BookPublic(BaseModel):
     author: str
     isbn: str
     description: str | None = None
+    publication_year: int | None = None
     total_copies: int
     available_copies: int
     is_available: bool
@@ -141,6 +142,7 @@ class BookCreate(BaseModel):
     author: str = Field(min_length=1, max_length=255)
     isbn: str = Field(min_length=5, max_length=20)
     description: str | None = Field(None, max_length=1000)
+    publication_year: int | None = Field(None, ge=1000, le=2100)
     total_copies: int = Field(ge=1)
     category_id: int | None = None
 
@@ -150,6 +152,7 @@ class BookUpdate(BaseModel):
     author: str | None = Field(None, min_length=1, max_length=255)
     isbn: str | None = Field(None, min_length=5, max_length=20)
     description: str | None = Field(None, max_length=1000)
+    publication_year: int | None = Field(None, ge=1000, le=2100)
     total_copies: int | None = Field(None, ge=1)
     category_id: int | None = None
 
