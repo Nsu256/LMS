@@ -298,3 +298,33 @@ class DetailedReport(BaseModel):
     generated_at: datetime
     total_records: int
     data: list[dict]
+
+
+# ==================== NOTIFICATION SCHEMAS ====================
+
+class SendNotificationEmailRequest(BaseModel):
+    student_id: int
+    notification_type: str = Field(pattern="^(due_reminder|overdue_alert|fine_notice)$")
+    subject: str = Field(min_length=3, max_length=255)
+    message: str = Field(min_length=3, max_length=2000)
+
+
+class NotificationPublic(BaseModel):
+    id: int
+    student_id: int | None = None
+    sent_by_librarian_id: int | None = None
+    recipient_email: EmailStr
+    subject: str
+    body: str
+    notification_type: str
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+    sent_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationSendResponse(BaseModel):
+    message: str
+    notification: NotificationPublic

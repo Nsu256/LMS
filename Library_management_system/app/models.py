@@ -138,3 +138,42 @@ class Fine(Base):
     )
 
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationType(enum.Enum):
+    DUE_REMINDER = "due_reminder"
+    OVERDUE_ALERT = "overdue_alert"
+    FINE_NOTICE = "fine_notice"
+
+
+class NotificationStatus(enum.Enum):
+    SENT = "sent"
+    FAILED = "failed"
+
+
+class NotificationLog(Base):
+    __tablename__ = "notification_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), nullable=True)
+
+    sent_by_librarian_id: Mapped[int] = mapped_column(Integer, ForeignKey("librarians.id"), nullable=True)
+
+    recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    body: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+    notification_type: Mapped[str] = mapped_column(Enum(NotificationType), nullable=False)
+
+    status: Mapped[str] = mapped_column(Enum(NotificationStatus), nullable=False)
+
+    error_message: Mapped[str] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
