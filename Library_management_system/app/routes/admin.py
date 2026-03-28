@@ -5,11 +5,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
 from app.database import get_db
-from app.models import Book, BorrowRequest, BorrowRecord, Fine, Student, Librarian, BorrowRequestStatus
+from app.models import (
+    Book,
+    BookCategory,
+    BookCondition,
+    BookConditionStatus,
+    BorrowRequest,
+    BorrowRecord,
+    Category,
+    Fine,
+    Student,
+    Librarian,
+    BorrowRequestStatus,
+)
 from app.schemas import (
+    BookConditionUpdateRequest,
+    BookConditionUpdateResponse,
     BookPublic,
     BookCreate,
     BookUpdate,
+    CategoryCreate,
+    CategoryPublic,
     DenyBorrowRequest,
     FineCreate,
     FinePublic,
@@ -76,6 +92,14 @@ def add_book_to_catalog(
             detail="Book with this ISBN already exists",
         )
 
+    if payload.category_id is not None:
+        category = db.query(Category).filter(Category.id == payload.category_id).first()
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found",
+            )
+
     book = Book(
         title=payload.title,
         author=payload.author,
@@ -86,6 +110,11 @@ def add_book_to_catalog(
         is_available=True,
     )
     db.add(book)
+    db.flush()
+
+    if payload.category_id is not None:
+        db.add(BookCategory(book_id=book.id, category_id=payload.category_id))
+
     db.commit()
     db.refresh(book)
 
@@ -135,6 +164,20 @@ def edit_book_details(
     # Update is_available based on available_copies
     book.is_available = book.available_copies > 0
 
+    if payload.category_id is not None:
+        category = db.query(Category).filter(Category.id == payload.category_id).first()
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found",
+            )
+
+        book_category = db.query(BookCategory).filter(BookCategory.book_id == book.id).first()
+        if book_category:
+            book_category.category_id = payload.category_id
+        else:
+            db.add(BookCategory(book_id=book.id, category_id=payload.category_id))
+
     db.commit()
     db.refresh(book)
 
@@ -172,6 +215,68 @@ def remove_book_from_catalog(
     db.commit()
 
     return {"message": "Book removed from catalog"}
+
+
+@router.post("/books/categories", response_model=CategoryPublic, status_code=status.HTTP_201_CREATED)
+def create_book_category(
+    payload: CategoryCreate,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    existing_category = db.query(Category).filter(Category.name == payload.name).first()
+    if existing_category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Category with this name already exists",
+        )
+
+    category = Category(name=payload.name, description=payload.description)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+
+    return category
+
+
+@router.put("/books/{book_id}/condition", response_model=BookConditionUpdateResponse)
+def update_book_condition(
+    book_id: int,
+    payload: BookConditionUpdateRequest,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+
+    condition_value = BookCondition(payload.condition)
+    book_condition = db.query(BookConditionStatus).filter(BookConditionStatus.book_id == book_id).first()
+    now = datetime.now(timezone.utc)
+
+    if book_condition:
+        book_condition.condition = condition_value
+        book_condition.updated_by_librarian_id = current_librarian.id
+        book_condition.updated_at = now
+    else:
+        book_condition = BookConditionStatus(
+            book_id=book_id,
+            condition=condition_value,
+            updated_by_librarian_id=current_librarian.id,
+            updated_at=now,
+        )
+        db.add(book_condition)
+
+    db.commit()
+
+    return BookConditionUpdateResponse(
+        message="Book condition updated successfully",
+        book_id=book_id,
+        condition=condition_value.value,
+        updated_at=now,
+    )
 
 
 # ==================== STUDENT MANAGEMENT ====================

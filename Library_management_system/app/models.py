@@ -71,6 +71,56 @@ class Book(Base):
     )
 
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+
+    description: Mapped[str] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class BookCategory(Base):
+    __tablename__ = "book_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    book_id: Mapped[int] = mapped_column(Integer, ForeignKey("books.id"), nullable=False, index=True)
+
+    category_id: Mapped[int] = mapped_column(Integer, ForeignKey("categories.id"), nullable=False, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class BookCondition(enum.Enum):
+    GOOD = "good"
+    FAIR = "fair"
+    DAMAGED = "damaged"
+
+
+class BookConditionStatus(Base):
+    __tablename__ = "book_condition_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    book_id: Mapped[int] = mapped_column(Integer, ForeignKey("books.id"), unique=True, nullable=False)
+
+    condition: Mapped[str] = mapped_column(Enum(BookCondition), nullable=False)
+
+    updated_by_librarian_id: Mapped[int] = mapped_column(Integer, ForeignKey("librarians.id"), nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
 class BorrowRequestStatus(enum.Enum):
     PENDING = "pending"
     APPROVED = "approved"

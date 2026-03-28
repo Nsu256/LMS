@@ -140,6 +140,7 @@ class BookCreate(BaseModel):
     isbn: str = Field(min_length=5, max_length=20)
     description: str | None = Field(None, max_length=1000)
     total_copies: int = Field(ge=1)
+    category_id: int | None = None
 
 
 class BookUpdate(BaseModel):
@@ -148,6 +149,32 @@ class BookUpdate(BaseModel):
     isbn: str | None = Field(None, min_length=5, max_length=20)
     description: str | None = Field(None, max_length=1000)
     total_copies: int | None = Field(None, ge=1)
+    category_id: int | None = None
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(None, max_length=500)
+
+
+class CategoryPublic(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BookConditionUpdateRequest(BaseModel):
+    condition: str = Field(pattern="^(good|fair|damaged)$")
+
+
+class BookConditionUpdateResponse(BaseModel):
+    message: str
+    book_id: int
+    condition: str
+    updated_at: datetime
 
 
 class DenyBorrowRequest(BaseModel):

@@ -4,9 +4,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Book, BorrowRequest, BorrowRecord, Fine, Student, BorrowRequestStatus
+from app.models import Book, BookCategory, BorrowRequest, BorrowRecord, Category, Fine, Student, BorrowRequestStatus
 from app.schemas import (
     BookPublic,
+    CategoryPublic,
     BorrowRequestCreate,
     BorrowRequestPublic,
     BorrowRecordPublic,
@@ -68,6 +69,38 @@ def list_available_books(
         )
 
     books = query.offset(skip).limit(limit).all()
+    return books
+
+
+@router.get("/categories", response_model=list[CategoryPublic])
+def list_book_categories(db: Session = Depends(get_db)):
+    categories = db.query(Category).order_by(Category.name.asc()).all()
+    return categories
+
+
+@router.get("/category/{category_id}", response_model=list[BookPublic])
+def list_books_by_category(
+    category_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found",
+        )
+
+    books = (
+        db.query(Book)
+        .join(BookCategory, BookCategory.book_id == Book.id)
+        .filter(BookCategory.category_id == category_id)
+        .order_by(Book.title.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return books
 
 
