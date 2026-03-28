@@ -5,6 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.audit import log_audit_event
 from app.models import Book, BookCategory, BorrowRequest, BorrowRecord, Category, Fine, Student, BorrowRequestStatus
 from app.schemas import (
     BookPublic,
@@ -273,6 +274,18 @@ def request_borrow_book(
         status=BorrowRequestStatus.PENDING,
     )
     db.add(borrow_request)
+    db.flush()
+
+    log_audit_event(
+        db,
+        action="borrow_requested",
+        actor_type="student",
+        user_id=current_student.id,
+        resource="borrow_request",
+        resource_id=borrow_request.id,
+        details=f"Requested borrow for book_id={payload.book_id}",
+    )
+
     db.commit()
     db.refresh(borrow_request)
 
@@ -383,6 +396,16 @@ def return_book(
             is_paid=False,
         )
         db.add(fine)
+
+    log_audit_event(
+        db,
+        action="book_returned",
+        actor_type="student",
+        user_id=current_student.id,
+        resource="borrow_record",
+        resource_id=record.id,
+        details=f"Returned book_id={record.book_id}",
+    )
 
     db.commit()
 

@@ -13,6 +13,7 @@ from app.models import (
     BookCategory,
     BookCondition,
     BookConditionStatus,
+    AuditLog,
     BorrowRequest,
     BorrowRecord,
     Category,
@@ -22,6 +23,7 @@ from app.models import (
     BorrowRequestStatus,
 )
 from app.schemas import (
+    AuditLogPublic,
     BookConditionUpdateRequest,
     BookConditionUpdateResponse,
     BookPublic,
@@ -39,6 +41,7 @@ from app.schemas import (
     StudentFineClearanceResponse,
     MessageResponse,
 )
+from app.audit import log_audit_event
 from app.security import decode_token
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -330,6 +333,16 @@ def add_book_to_catalog(
 
     if payload.category_id is not None:
         db.add(BookCategory(book_id=book.id, category_id=payload.category_id))
+
+    log_audit_event(
+        db,
+        action="book_created",
+        actor_type="librarian",
+        user_id=current_librarian.id,
+        resource="book",
+        resource_id=book.id,
+        details=f"Created book '{book.title}' (ISBN: {book.isbn})",
+    )
 
     db.commit()
     db.refresh(book)
@@ -861,3 +874,91 @@ def custom_date_range_report(
         "total_records": len(rows),
         "rows": rows,
     }
+
+
+@router.get("/logs", response_model=list[AuditLogPublic])
+def list_audit_logs(
+    action: str | None = Query(None),
+    user_id: int | None = Query(None, ge=1),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AuditLog)
+
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if user_id is not None:
+        query = query.filter(AuditLog.user_id == user_id)
+    if date_from is not None:
+        start = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+        query = query.filter(AuditLog.created_at >= start)
+    if date_to is not None:
+        end = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+        query = query.filter(AuditLog.created_at <= end)
+
+    return (
+        query.order_by(AuditLog.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+@router.get("/logs/exports")
+def export_audit_logs(
+    format: str = Query("excel", pattern="^(pdf|excel)$"),
+    action: str | None = Query(None),
+    user_id: int | None = Query(None, ge=1),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AuditLog)
+
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if user_id is not None:
+        query = query.filter(AuditLog.user_id == user_id)
+    if date_from is not None:
+        start = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+        query = query.filter(AuditLog.created_at >= start)
+    if date_to is not None:
+        end = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+        query = query.filter(AuditLog.created_at <= end)
+
+    rows = [
+        {
+            "id": log.id,
+            "action": log.action,
+            "actor_type": log.actor_type,
+            "user_id": log.user_id,
+            "resource": log.resource,
+            "resource_id": log.resource_id,
+            "details": log.details,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log in query.order_by(AuditLog.created_at.desc()).all()
+    ]
+
+    filename_base = f"audit_logs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    if format == "excel":
+        content = _build_excel_bytes(rows, "audit_logs")
+        return StreamingResponse(
+            BytesIO(content),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename_base}.xlsx"},
+        )
+
+    start_date = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else datetime.now(timezone.utc)
+    end_date = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else datetime.now(timezone.utc)
+    content = _build_pdf_bytes(rows, "audit_logs", start_date, end_date)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename_base}.pdf"},
+    )

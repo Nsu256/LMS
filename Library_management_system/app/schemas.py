@@ -360,3 +360,16 @@ class NotificationPublic(BaseModel):
 class NotificationSendResponse(BaseModel):
     message: str
     notification: NotificationPublic
+
+
+class AuditLogPublic(BaseModel):
+    id: int
+    action: str
+    actor_type: str
+    user_id: int
+    resource: str
+    resource_id: int | None = None
+    details: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

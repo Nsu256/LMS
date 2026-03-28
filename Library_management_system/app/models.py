@@ -229,3 +229,25 @@ class NotificationLog(Base):
     )
 
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    action: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+    resource: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    resource_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
+
+    details: Mapped[str] = mapped_column(String(2000), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
