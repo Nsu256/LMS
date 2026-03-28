@@ -24,6 +24,35 @@ security = HTTPBearer()
 BORROW_PERIOD_DAYS = 14
 
 
+def _build_category_map(book_ids: list[int], db: Session) -> dict[int, tuple[int | None, str | None]]:
+    if not book_ids:
+        return {}
+
+    rows = (
+        db.query(BookCategory.book_id, Category.id, Category.name)
+        .join(Category, Category.id == BookCategory.category_id)
+        .filter(BookCategory.book_id.in_(book_ids))
+        .all()
+    )
+    return {int(book_id): (int(category_id), category_name) for book_id, category_id, category_name in rows}
+
+
+def _book_to_public(book: Book, category_map: dict[int, tuple[int | None, str | None]]) -> dict:
+    category_id, category_name = category_map.get(book.id, (None, None))
+    return {
+        "id": book.id,
+        "title": book.title,
+        "author": book.author,
+        "isbn": book.isbn,
+        "description": book.description,
+        "total_copies": book.total_copies,
+        "available_copies": book.available_copies,
+        "is_available": book.is_available,
+        "category_id": category_id,
+        "category_name": category_name,
+    }
+
+
 def get_current_student(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> Student:
     """Verify token and extract current student."""
     try:
@@ -69,7 +98,8 @@ def list_available_books(
         )
 
     books = query.offset(skip).limit(limit).all()
-    return books
+    category_map = _build_category_map([book.id for book in books], db)
+    return [_book_to_public(book, category_map) for book in books]
 
 
 @router.get("/categories", response_model=list[CategoryPublic])
@@ -101,7 +131,8 @@ def list_books_by_category(
         .limit(limit)
         .all()
     )
-    return books
+    category_map = _build_category_map([book.id for book in books], db)
+    return [_book_to_public(book, category_map) for book in books]
 
 
 @router.get("/{book_id}", response_model=BookPublic)
@@ -115,7 +146,8 @@ def get_book_details(book_id: int, db: Session = Depends(get_db)):
             detail="Book not found",
         )
 
-    return book
+    category_map = _build_category_map([book.id], db)
+    return _book_to_public(book, category_map)
 
 
 @router.post("/borrow", response_model=BorrowRequestPublic)

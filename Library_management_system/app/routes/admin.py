@@ -42,6 +42,30 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 security = HTTPBearer()
 
 
+def _book_to_public(book: Book, db: Session) -> dict:
+    row = (
+        db.query(Category.id, Category.name)
+        .join(BookCategory, BookCategory.category_id == Category.id)
+        .filter(BookCategory.book_id == book.id)
+        .first()
+    )
+    category_id = int(row[0]) if row else None
+    category_name = row[1] if row else None
+
+    return {
+        "id": book.id,
+        "title": book.title,
+        "author": book.author,
+        "isbn": book.isbn,
+        "description": book.description,
+        "total_copies": book.total_copies,
+        "available_copies": book.available_copies,
+        "is_available": book.is_available,
+        "category_id": category_id,
+        "category_name": category_name,
+    }
+
+
 def get_current_librarian(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> Librarian:
     """Verify token and extract current librarian with admin privileges."""
     try:
@@ -118,7 +142,7 @@ def add_book_to_catalog(
     db.commit()
     db.refresh(book)
 
-    return book
+    return _book_to_public(book, db)
 
 
 @router.put("/books/{book_id}", response_model=BookPublic)
@@ -181,7 +205,7 @@ def edit_book_details(
     db.commit()
     db.refresh(book)
 
-    return book
+    return _book_to_public(book, db)
 
 
 @router.delete("/books/{book_id}", response_model=MessageResponse)

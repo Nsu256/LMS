@@ -69,6 +69,8 @@ class BookPublic(BaseModel):
     total_copies: int
     available_copies: int
     is_available: bool
+    category_id: int | None = None
+    category_name: str | None = None
 
     model_config = {"from_attributes": True}
 
