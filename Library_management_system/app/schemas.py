@@ -132,3 +132,78 @@ class ReturnBookRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class BookCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    author: str = Field(min_length=1, max_length=255)
+    isbn: str = Field(min_length=5, max_length=20)
+    description: str | None = Field(None, max_length=1000)
+    total_copies: int = Field(ge=1)
+
+
+class BookUpdate(BaseModel):
+    title: str | None = Field(None, min_length=1, max_length=255)
+    author: str | None = Field(None, min_length=1, max_length=255)
+    isbn: str | None = Field(None, min_length=5, max_length=20)
+    description: str | None = Field(None, max_length=1000)
+    total_copies: int | None = Field(None, ge=1)
+
+
+class DenyBorrowRequest(BaseModel):
+    denial_reason: str = Field(min_length=5, max_length=500)
+
+
+class FineCreate(BaseModel):
+    amount: float = Field(ge=0)
+    reason: str = Field(min_length=5, max_length=255)
+
+
+class BorrowRequestWithStudentBook(BaseModel):
+    id: int
+    student_id: int
+    book_id: int
+    status: str
+    requested_at: datetime
+    approved_at: datetime | None = None
+    denial_reason: str | None = None
+    student: StudentPublic
+    book: BookPublic
+
+    model_config = {"from_attributes": True}
+
+
+class BorrowRecordWithStudentBook(BaseModel):
+    id: int
+    student_id: int
+    book_id: int
+    borrowed_at: datetime
+    due_date: datetime
+    returned_at: datetime | None = None
+    is_returned: bool
+    student: StudentPublic
+    book: BookPublic
+
+    model_config = {"from_attributes": True}
+
+
+class StudentWithFines(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    registration_number: str
+    is_active: bool
+    outstanding_fines: float = 0.0
+
+    model_config = {"from_attributes": True}
+
+
+class BorrowingReport(BaseModel):
+    total_books_in_catalog: int
+    total_available_copies: int
+    total_borrowed_copies: int
+    total_pending_requests: int
+    total_active_borrows: int
+    total_overdue_books: int
+    total_active_students: int
+    total_outstanding_fines: float
