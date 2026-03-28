@@ -105,7 +105,7 @@ def resend_verification_email(payload: StudentRegisterRequest, db: Session = Dep
 
 
 @router.post("/login", response_model=TokenResponse)
-def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
+def login_users(payload: StudentLoginRequest, db: Session = Depends(get_db)):
     student = db.query(Student).filter(Student.email == payload.email).first()
     if student:
         if not verify_password(payload.password, student.hashed_password):
@@ -141,7 +141,7 @@ def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/logout", response_model=RegisterResponse)
-def logout_student(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def logout_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         decode_token(credentials.credentials)
     except ValueError:
