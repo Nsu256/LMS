@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime
 
 
 class StudentRegisterRequest(BaseModel):
@@ -56,4 +57,78 @@ class TokenResponse(BaseModel):
 
 
 class RegisterResponse(BaseModel):
+    message: str
+
+
+class BookPublic(BaseModel):
+    id: int
+    title: str
+    author: str
+    isbn: str
+    description: str | None = None
+    total_copies: int
+    available_copies: int
+    is_available: bool
+
+    model_config = {"from_attributes": True}
+
+
+class BorrowRequestCreate(BaseModel):
+    book_id: int
+
+
+class BorrowRequestPublic(BaseModel):
+    id: int
+    student_id: int
+    book_id: int
+    status: str
+    requested_at: datetime
+    approved_at: datetime | None = None
+    denial_reason: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class BorrowRecordPublic(BaseModel):
+    id: int
+    student_id: int
+    book_id: int
+    borrowed_at: datetime
+    due_date: datetime
+    returned_at: datetime | None = None
+    is_returned: bool
+
+    model_config = {"from_attributes": True}
+
+
+class BorrowRecordWithBook(BaseModel):
+    id: int
+    book_id: int
+    borrowed_at: datetime
+    due_date: datetime
+    returned_at: datetime | None = None
+    is_returned: bool
+    book: BookPublic
+
+    model_config = {"from_attributes": True}
+
+
+class FinePublic(BaseModel):
+    id: int
+    student_id: int
+    borrow_record_id: int | None = None
+    amount: float
+    is_paid: bool
+    reason: str
+    created_at: datetime
+    paid_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ReturnBookRequest(BaseModel):
+    borrow_record_id: int
+
+
+class MessageResponse(BaseModel):
     message: str
