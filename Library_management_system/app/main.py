@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 
 from app.database import Base, engine
@@ -7,6 +8,8 @@ from app.routes.books import router as books_router
 from app.routes.admin import router as admin_router
 from app.routes.notifications import router as notifications_router
 from app.routes.stats import router as stats_router
+
+load_dotenv()
 
 app = FastAPI(title="Library Management System API", version="1.0.0")
 
