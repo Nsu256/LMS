@@ -41,6 +41,24 @@ def get_current_librarian(credentials: HTTPAuthorizationCredentials = Depends(se
     return librarian
 
 
+# ==================== USER STATISTICS ====================
+
+@router.get("/users/total", response_model=dict)
+def get_total_users_count(
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db)
+):
+    """Get total number of users in the system."""
+    total_students = db.query(func.count(Student.id)).scalar() or 0
+    total_librarians = db.query(func.count(Librarian.id)).scalar() or 0
+
+    return {
+        "total_students": total_students,
+        "total_librarians": total_librarians,
+        "total_users": total_students + total_librarians,
+    }
+
+
 # ==================== STUDENT STATISTICS ====================
 
 @router.get("/students/active", response_model=dict)
