@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
 from app.database import get_db
-from app.models import Book, BorrowRequest, BorrowRecord, Fine, Student, Librarian
+from app.models import Book, BorrowRequest, BorrowRecord, Fine, Student, Librarian, BorrowRequestStatus
 from app.schemas import (
     TopBorrower,
     StudentStats,
@@ -223,6 +223,27 @@ def get_book_inventory_stats(
         borrowed_copies=borrowed_copies,
         books_with_zero_availability=zero_availability
     )
+
+
+@router.get("/books/status-distribution", response_model=dict)
+def get_book_status_distribution(
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db)
+):
+    """Get pie-chart-ready distribution of available, borrowed, and reserved books."""
+    total_copies = db.query(func.sum(Book.total_copies)).scalar() or 0
+    available_copies = db.query(func.sum(Book.available_copies)).scalar() or 0
+    borrowed_copies = max(total_copies - available_copies, 0)
+
+    reserved_books = db.query(func.count(BorrowRequest.id)).filter(
+        BorrowRequest.status == BorrowRequestStatus.PENDING
+    ).scalar() or 0
+
+    return {
+        "available_books": available_copies,
+        "borrowed_books": borrowed_copies,
+        "reserved_books": reserved_books,
+    }
 
 
 # ==================== BORROWING ANALYTICS ====================
