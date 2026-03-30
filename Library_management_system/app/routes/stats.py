@@ -5,7 +5,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
 from app.database import get_db
-from app.models import Book, BorrowRequest, BorrowRecord, Fine, Student, Librarian, BorrowRequestStatus
+from app.models import (
+    Book,
+    BorrowRequest,
+    BorrowRecord,
+    Fine,
+    Student,
+    Librarian,
+    BorrowRequestStatus,
+    Category,
+    BookCategory,
+)
 from app.schemas import (
     TopBorrower,
     StudentStats,
@@ -223,6 +233,35 @@ def get_book_inventory_stats(
         borrowed_copies=borrowed_copies,
         books_with_zero_availability=zero_availability
     )
+
+
+@router.get("/books/by-category", response_model=list[dict])
+def get_books_by_category(
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db)
+):
+    """Get total books per category for bar chart visualization."""
+    rows = (
+        db.query(
+            Category.id,
+            Category.name,
+            func.count(Book.id).label("total_books"),
+        )
+        .outerjoin(BookCategory, BookCategory.category_id == Category.id)
+        .outerjoin(Book, Book.id == BookCategory.book_id)
+        .group_by(Category.id, Category.name)
+        .order_by(Category.name.asc())
+        .all()
+    )
+
+    return [
+        {
+            "category_id": row[0],
+            "category_name": row[1],
+            "total_books": row[2] or 0,
+        }
+        for row in rows
+    ]
 
 
 @router.get("/books/status-distribution", response_model=dict)
