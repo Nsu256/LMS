@@ -61,16 +61,26 @@ def register_student(payload: StudentRegisterRequest, db: Session = Depends(get_
             detail="Student with this email or registration number already exists",
         )
 
-    verification_token = create_email_verification_token(claims=_build_verification_claims(payload))
-    try:
-        send_verification_email(payload.email, verification_token)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration failed because verification email could not be sent",
-        )
+    # verification_token = create_email_verification_token(claims=_build_verification_claims(payload))
+    # try:
+    #     send_verification_email(payload.email, verification_token)
+    # except Exception:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Registration failed because verification email could not be sent",
+    #     )
 
-    return RegisterResponse(message="Verification email sent. Please verify to complete registration")
+    student = Student(
+        full_name=payload.full_name,
+        email=payload.email,
+        registration_number=payload.registration_number,
+        hashed_password=hash_password(payload.password),
+        is_active=True,
+    )
+    db.add(student)
+    db.commit()
+
+    return RegisterResponse(message="Registration successful")
 
 
 
@@ -94,16 +104,16 @@ def resend_verification_email(payload: StudentRegisterRequest, db: Session = Dep
             detail="Student already verified. Please login",
         )
 
-    verification_token = create_email_verification_token(claims=_build_verification_claims(payload))
-    try:
-        send_verification_email(payload.email, verification_token)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Verification email could not be sent",
-        )
+    # verification_token = create_email_verification_token(claims=_build_verification_claims(payload))
+    # try:
+    #     send_verification_email(payload.email, verification_token)
+    # except Exception:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Verification email could not be sent",
+    #     )
 
-    return RegisterResponse(message="Verification email resent. Please verify to complete registration")
+    return RegisterResponse(message="Verification bypassed")
 
 
 
@@ -117,11 +127,11 @@ def login_users(payload: StudentLoginRequest, db: Session = Depends(get_db)):
                 detail="Invalid email or password",
             )
 
-        if not student.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Please verify your email before logging in",
-            )
+        # if not student.is_active:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_403_FORBIDDEN,
+        #         detail="Please verify your email before logging in",
+        #     )
 
         token = create_access_token(subject=str(student.id))
         return TokenResponse(access_token=token, user_type="student", student=student)
@@ -133,11 +143,11 @@ def login_users(payload: StudentLoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
 
-    if not librarian.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Librarian account is inactive",
-        )
+    # if not librarian.is_active:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Librarian account is inactive",
+    #     )
 
     token = create_access_token(subject=str(librarian.id))
     return TokenResponse(access_token=token, user_type="librarian", librarian=librarian)
@@ -261,42 +271,42 @@ def change_password(
 
 @router.get("/verify-email")
 def verify_student_email(token: str, db: Session = Depends(get_db)):
-    try:
-        payload = decode_email_verification_token(token)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
-        )
-
-    full_name = payload.get("full_name")
-    email = payload.get("email")
-    registration_number = payload.get("registration_number")
-    hashed_password = payload.get("hashed_password")
-    if not all([full_name, email, registration_number, hashed_password]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid verification token",
-        )
-
-    existing_student = db.query(Student).filter(
-        or_(
-            Student.email == email,
-            Student.registration_number == registration_number,
-        )
-    ).first()
-    if existing_student:
-        return {"message": "Email already verified"}
-
-    student = Student(
-        full_name=full_name,
-        email=email,
-        registration_number=registration_number,
-        hashed_password=hashed_password,
-        is_active=True,
-    )
-    db.add(student)
-    db.commit()
+    # try:
+    #     payload = decode_email_verification_token(token)
+    # except ValueError:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Invalid or expired verification token",
+    #     )
+    #
+    # full_name = payload.get("full_name")
+    # email = payload.get("email")
+    # registration_number = payload.get("registration_number")
+    # hashed_password = payload.get("hashed_password")
+    # if not all([full_name, email, registration_number, hashed_password]):
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Invalid verification token",
+    #     )
+    #
+    # existing_student = db.query(Student).filter(
+    #     or_(
+    #         Student.email == email,
+    #         Student.registration_number == registration_number,
+    #     )
+    # ).first()
+    # if existing_student:
+    #     return {"message": "Email already verified"}
+    #
+    # student = Student(
+    #     full_name=full_name,
+    #     email=email,
+    #     registration_number=registration_number,
+    #     hashed_password=hashed_password,
+    #     is_active=True,
+    # )
+    # db.add(student)
+    # db.commit()
 
     return {"message": "Email verified successfully"}
     
