@@ -541,6 +541,129 @@ def list_all_students(
     return result
 
 
+@router.patch("/students/{student_id}/suspend", response_model=MessageResponse)
+def suspend_student(
+    student_id: int,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    """Suspend a student account by setting is_active to False."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    if not student.is_active:
+        return {"message": "Student is already suspended"}
+
+    student.is_active = False
+    db.commit()
+
+    return {"message": "Student suspended successfully"}
+
+
+@router.patch("/students/{student_id}/activate", response_model=MessageResponse)
+def activate_student(
+    student_id: int,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    """Activate a student account by setting is_active to True."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    if student.is_active:
+        return {"message": "Student is already active"}
+
+    student.is_active = True
+    db.commit()
+
+    return {"message": "Student activated successfully"}
+
+
+@router.delete("/students/{student_id}", response_model=MessageResponse)
+def delete_student(
+    student_id: int,
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    """Delete a student account if there are no dependent borrowing/fine records."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    active_borrows = db.query(BorrowRecord).filter(
+        BorrowRecord.student_id == student_id,
+        BorrowRecord.is_returned == False,
+    ).count()
+    if active_borrows > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with active borrowed books",
+        )
+
+    pending_requests = db.query(BorrowRequest).filter(
+        BorrowRequest.student_id == student_id,
+        BorrowRequest.status == BorrowRequestStatus.PENDING,
+    ).count()
+    if pending_requests > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with pending borrow requests",
+        )
+
+    unpaid_fines = db.query(Fine).filter(
+        Fine.student_id == student_id,
+        Fine.is_paid == False,
+    ).count()
+    if unpaid_fines > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with unpaid fines",
+        )
+
+    historical_borrow_records = db.query(BorrowRecord).filter(
+        BorrowRecord.student_id == student_id,
+    ).count()
+    if historical_borrow_records > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with borrowing history",
+        )
+
+    historical_requests = db.query(BorrowRequest).filter(
+        BorrowRequest.student_id == student_id,
+    ).count()
+    if historical_requests > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with borrow request history",
+        )
+
+    historical_fines = db.query(Fine).filter(
+        Fine.student_id == student_id,
+    ).count()
+    if historical_fines > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete student with fine history",
+        )
+
+    db.delete(student)
+    db.commit()
+
+    return {"message": "Student deleted successfully"}
+
+
 @router.post("/students/{student_id}/clear", response_model=StudentFineClearanceResponse)
 def clear_student_fines(
     student_id: int,
