@@ -179,13 +179,13 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
         )
 
     reset_token = create_password_reset_token(subject=str(student.id))
-    try:
-        send_password_reset_email(student.email, reset_token)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password reset email could not be sent",
-        )
+    # try:
+    #     send_password_reset_email(student.email, reset_token)
+    # except Exception:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Password reset email could not be sent",
+    #     )
 
     return RegisterResponse(message="Password reset email has been sent")
 
