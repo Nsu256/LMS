@@ -241,21 +241,6 @@ def list_books_by_category(
     return [_book_to_public(book, category_map) for book in books]
 
 
-@router.get("/{book_id}", response_model=BookPublic)
-def get_book_details(book_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific book."""
-    book = db.query(Book).filter(Book.id == book_id).first()
-
-    if not book:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Book not found",
-        )
-
-    category_map = _build_category_map([book.id], db)
-    return _book_to_public(book, category_map)
-
-
 @router.get("/{book_id}/download")
 def download_book_file(
     book_id: int,
@@ -369,6 +354,8 @@ def get_borrowed_books(
     result = []
     for record in records:
         book = db.query(Book).filter(Book.id == record.book_id).first()
+        if not book:
+            continue
         result.append({
             "id": record.id,
             "book_id": record.book_id,
@@ -399,6 +386,8 @@ def get_borrowing_history(
     result = []
     for record in records:
         book = db.query(Book).filter(Book.id == record.book_id).first()
+        if not book:
+            continue
         result.append({
             "id": record.id,
             "book_id": record.book_id,
@@ -499,3 +488,18 @@ def get_outstanding_fines(
     ).all()
 
     return fines
+
+
+@router.get("/{book_id}", response_model=BookPublic)
+def get_book_details(book_id: int, db: Session = Depends(get_db)):
+    """Get detailed information about a specific book."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+
+    category_map = _build_category_map([book.id], db)
+    return _book_to_public(book, category_map)
