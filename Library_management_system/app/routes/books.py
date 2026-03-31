@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -22,8 +24,19 @@ from app.security import decode_token
 
 router = APIRouter(prefix="/books", tags=["Books"])
 security = HTTPBearer(auto_error=False)
+BOOK_FILES_DIR = Path(__file__).resolve().parents[2] / "storage" / "book_files"
 
 BORROW_PERIOD_DAYS = 14
+
+
+def _get_book_file_path(book_id: int) -> Path | None:
+    if not BOOK_FILES_DIR.exists():
+        return None
+
+    for file_path in BOOK_FILES_DIR.glob(f"{book_id}.*"):
+        if file_path.is_file():
+            return file_path
+    return None
 
 
 def _build_category_map(book_ids: list[int], db: Session) -> dict[int, tuple[int | None, str | None]]:
@@ -241,6 +254,46 @@ def get_book_details(book_id: int, db: Session = Depends(get_db)):
 
     category_map = _build_category_map([book.id], db)
     return _book_to_public(book, category_map)
+
+
+@router.get("/{book_id}/download")
+def download_book_file(
+    book_id: int,
+    current_student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """Download the uploaded digital file for a book."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+
+    file_path = _get_book_file_path(book_id)
+    if not file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No digital file is available for this book",
+        )
+
+    media_types = {
+        ".pdf": "application/pdf",
+        ".epub": "application/epub+zip",
+        ".txt": "text/plain",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".csv": "text/csv",
+    }
+    suffix = file_path.suffix.lower()
+    media_type = media_types.get(suffix, "application/octet-stream")
+    download_name = f"{book.title}{suffix}".replace("/", "-")
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=download_name,
+    )
 
 
 @router.post("/borrow", response_model=BorrowRequestPublic)

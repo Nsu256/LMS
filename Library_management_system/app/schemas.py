@@ -248,6 +248,19 @@ class StudentFineClearanceResponse(BaseModel):
     total_cleared_amount: float
 
 
+class BookImportError(BaseModel):
+    row: int
+    error: str
+
+
+class BookImportResponse(BaseModel):
+    message: str
+    total_rows: int
+    imported_count: int
+    skipped_count: int
+    errors: list[BookImportError]
+
+
 # ==================== STATISTICS SCHEMAS ====================
 
 class TopBorrower(BaseModel):

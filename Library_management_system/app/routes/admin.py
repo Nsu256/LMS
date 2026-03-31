@@ -1,11 +1,13 @@
 import csv
 from datetime import date, datetime, timezone
 from io import BytesIO, StringIO
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
+from pydantic import ValidationError
 
 from app.database import get_db
 from app.models import (
@@ -40,12 +42,15 @@ from app.schemas import (
     BorrowingReport,
     StudentFineClearanceResponse,
     MessageResponse,
+    BookImportResponse,
 )
 from app.audit import log_audit_event
 from app.security import decode_token
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 security = HTTPBearer(auto_error=False)
+BOOK_FILES_DIR = Path(__file__).resolve().parents[2] / "storage" / "book_files"
+SUPPORTED_BOOK_FILE_EXTENSIONS = {".pdf", ".epub", ".txt", ".doc", ".docx", ".csv"}
 
 
 def _book_to_public(book: Book, db: Session) -> dict:
@@ -304,6 +309,159 @@ def _build_pdf_bytes(rows: list[dict], report_type: str, start_date: datetime, e
     return buffer.getvalue()
 
 
+def _normalize_header(header: str) -> str:
+    return header.strip().lower().replace(" ", "_")
+
+
+def _get_book_file_path(book_id: int) -> Path | None:
+    if not BOOK_FILES_DIR.exists():
+        return None
+
+    for file_path in BOOK_FILES_DIR.glob(f"{book_id}.*"):
+        if file_path.is_file():
+            return file_path
+    return None
+
+
+def _book_row_from_mapping(raw_row: dict) -> dict:
+    normalized = {_normalize_header(str(key)): value for key, value in raw_row.items()}
+
+    def pick(*keys: str):
+        for key in keys:
+            if key in normalized and normalized[key] not in (None, ""):
+                return normalized[key]
+        return None
+
+    payload = {
+        "title": pick("title", "book_title"),
+        "author": pick("author", "book_author"),
+        "isbn": pick("isbn", "isbn_13", "isbn_10"),
+        "description": pick("description", "summary"),
+        "publication_year": pick("publication_year", "year", "published_year"),
+        "total_copies": pick("total_copies", "copies", "quantity"),
+        "category_id": pick("category_id", "category"),
+    }
+
+    if payload["publication_year"] is not None:
+        payload["publication_year"] = int(payload["publication_year"])
+    if payload["total_copies"] is not None:
+        payload["total_copies"] = int(payload["total_copies"])
+    else:
+        payload["total_copies"] = 1
+    if payload["category_id"] is not None:
+        payload["category_id"] = int(payload["category_id"])
+
+    return payload
+
+
+def _parse_csv_rows(file_bytes: bytes) -> list[dict]:
+    text = file_bytes.decode("utf-8-sig")
+    reader = csv.DictReader(StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV file must include a header row",
+        )
+    return [_book_row_from_mapping(row) for row in reader]
+
+
+def _parse_text_lines_to_rows(text: str) -> list[dict]:
+    rows: list[dict] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "|" not in stripped:
+            continue
+        parts = [part.strip() for part in stripped.split("|")]
+        if len(parts) < 5:
+            continue
+        row = {
+            "title": parts[0],
+            "author": parts[1],
+            "isbn": parts[2],
+            "publication_year": parts[3],
+            "total_copies": parts[4],
+            "description": parts[5] if len(parts) > 5 and parts[5] else None,
+            "category_id": parts[6] if len(parts) > 6 and parts[6] else None,
+        }
+        rows.append(_book_row_from_mapping(row))
+    return rows
+
+
+def _parse_pdf_rows(file_bytes: bytes) -> list[dict]:
+    try:
+        from pypdf import PdfReader
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="pypdf is required for PDF imports",
+        ) from exc
+
+    reader = PdfReader(BytesIO(file_bytes))
+    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    rows = _parse_text_lines_to_rows(extracted)
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No importable rows found in PDF. Use one row per line in this format: "
+                "title|author|isbn|publication_year|total_copies|description|category_id"
+            ),
+        )
+    return rows
+
+
+def _parse_docx_rows(file_bytes: bytes) -> list[dict]:
+    try:
+        from docx import Document
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="python-docx is required for DOCX imports",
+        ) from exc
+
+    document = Document(BytesIO(file_bytes))
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    rows = _parse_text_lines_to_rows(text)
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No importable rows found in DOCX. Use one row per line in this format: "
+                "title|author|isbn|publication_year|total_copies|description|category_id"
+            ),
+        )
+    return rows
+
+
+def _parse_import_file(filename: str, file_bytes: bytes) -> list[dict]:
+    lower_name = filename.lower()
+    if lower_name.endswith(".csv"):
+        return _parse_csv_rows(file_bytes)
+    if lower_name.endswith(".pdf"):
+        return _parse_pdf_rows(file_bytes)
+    if lower_name.endswith(".docx"):
+        return _parse_docx_rows(file_bytes)
+    if lower_name.endswith(".doc") or lower_name.endswith(".txt"):
+        text = file_bytes.decode("utf-8", errors="ignore")
+        rows = _parse_text_lines_to_rows(text)
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "No importable rows found. Use one row per line in this format: "
+                    "title|author|isbn|publication_year|total_copies|description|category_id"
+                ),
+            )
+        return rows
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Unsupported file format. Supported formats: csv, pdf, docx, doc, txt",
+    )
+
+
 # ==================== BOOK MANAGEMENT ====================
 
 @router.post("/books", response_model=BookPublic, status_code=status.HTTP_201_CREATED)
@@ -359,6 +517,171 @@ def add_book_to_catalog(
     db.refresh(book)
 
     return _book_to_public(book, db)
+
+
+@router.post("/books/import", response_model=BookImportResponse, status_code=status.HTTP_201_CREATED)
+async def import_books_to_catalog(
+    file: UploadFile = File(...),
+    default_category_id: int | None = Query(None, ge=1),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    """Import books from CSV/PDF/DOCX/DOC/TXT files."""
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must include a filename",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+
+    if default_category_id is not None:
+        default_category = db.query(Category).filter(Category.id == default_category_id).first()
+        if not default_category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default category not found",
+            )
+
+    parsed_rows = _parse_import_file(file.filename, file_bytes)
+    if not parsed_rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No rows found to import",
+        )
+
+    errors: list[dict] = []
+    imported_count = 0
+    seen_isbns: set[str] = set()
+
+    for row_number, raw_row in enumerate(parsed_rows, start=2):
+        try:
+            payload = BookCreate.model_validate(raw_row)
+        except ValidationError as exc:
+            errors.append({"row": row_number, "error": exc.errors()[0]["msg"]})
+            continue
+
+        if payload.isbn in seen_isbns:
+            errors.append({"row": row_number, "error": "Duplicate ISBN in upload file"})
+            continue
+
+        existing_book = db.query(Book).filter(Book.isbn == payload.isbn).first()
+        if existing_book:
+            errors.append({"row": row_number, "error": "Book with this ISBN already exists"})
+            continue
+
+        category_id = payload.category_id if payload.category_id is not None else default_category_id
+        if category_id is not None:
+            category = db.query(Category).filter(Category.id == category_id).first()
+            if not category:
+                errors.append({"row": row_number, "error": "Category not found"})
+                continue
+
+        book = Book(
+            title=payload.title,
+            author=payload.author,
+            isbn=payload.isbn,
+            description=payload.description,
+            publication_year=payload.publication_year,
+            total_copies=payload.total_copies,
+            available_copies=payload.total_copies,
+            is_available=True,
+        )
+        db.add(book)
+        db.flush()
+
+        if category_id is not None:
+            db.add(BookCategory(book_id=book.id, category_id=category_id))
+
+        seen_isbns.add(payload.isbn)
+        imported_count += 1
+
+    db.commit()
+
+    log_audit_event(
+        db,
+        action="books_imported",
+        actor_type="librarian",
+        user_id=current_librarian.id,
+        resource="book",
+        resource_id=None,
+        details=(
+            f"Imported {imported_count} books from file '{file.filename}'. "
+            f"Skipped {len(errors)} rows."
+        ),
+    )
+    db.commit()
+
+    return {
+        "message": "Book import completed",
+        "total_rows": len(parsed_rows),
+        "imported_count": imported_count,
+        "skipped_count": len(errors),
+        "errors": errors,
+    }
+
+
+@router.post("/books/{book_id}/file", response_model=MessageResponse)
+async def upload_book_file(
+    book_id: int,
+    file: UploadFile = File(...),
+    current_librarian: Librarian = Depends(get_current_librarian),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace a downloadable digital copy for a book."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must include a filename",
+        )
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in SUPPORTED_BOOK_FILE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file format. Supported formats: pdf, epub, txt, doc, docx, csv",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+
+    BOOK_FILES_DIR.mkdir(parents=True, exist_ok=True)
+
+    existing_file = _get_book_file_path(book_id)
+    if existing_file:
+        existing_file.unlink(missing_ok=True)
+
+    stored_file_path = BOOK_FILES_DIR / f"{book_id}{suffix}"
+    stored_file_path.write_bytes(file_bytes)
+
+    log_audit_event(
+        db,
+        action="book_file_uploaded",
+        actor_type="librarian",
+        user_id=current_librarian.id,
+        resource="book",
+        resource_id=book.id,
+        details=f"Uploaded digital file '{file.filename}' for book_id={book.id}",
+    )
+    db.commit()
+
+    return {"message": "Book file uploaded successfully"}
 
 
 @router.put("/books/{book_id}", response_model=BookPublic)
