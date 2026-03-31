@@ -21,10 +21,10 @@ def seed_librarian():
             db.add(new_librarian)
             db.commit()
             print("Librarian added successfully")
-        except Exception as e:
-            print(f"Error seeding database: {e}")
-        finally:
-            db.close()
+    except Exception as e:
+        print(f"Error seeding database: {e}")
+    finally:
+        db.close()
 
 
         if __name__ == "__main__":
