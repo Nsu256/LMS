@@ -50,7 +50,6 @@ from app.security import decode_token
 router = APIRouter(prefix="/admin", tags=["Admin"])
 security = HTTPBearer(auto_error=False)
 BOOK_FILES_DIR = Path(__file__).resolve().parents[2] / "storage" / "book_files"
-SUPPORTED_BOOK_FILE_EXTENSIONS = {".pdf", ".epub", ".txt", ".doc", ".docx", ".csv"}
 
 
 def _book_to_public(book: Book, db: Session) -> dict:
@@ -648,11 +647,6 @@ async def upload_book_file(
         )
 
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in SUPPORTED_BOOK_FILE_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported file format. Supported formats: pdf, epub, txt, doc, docx, csv",
-        )
 
     file_bytes = await file.read()
     if not file_bytes:

@@ -426,18 +426,28 @@ def return_book(
         )
 
     # Update borrow record
-    record.returned_at = datetime.now(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
+    record.returned_at = now_utc
     record.is_returned = True
 
     # Increase available copies
     book = db.query(Book).filter(Book.id == record.book_id).first()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
     book.available_copies += 1
     if book.available_copies > 0:
         book.is_available = True
 
     # Check for late return and create fine if needed
-    if datetime.now(timezone.utc) > record.due_date:
-        days_late = (datetime.now(timezone.utc) - record.due_date).days
+    due_date = record.due_date
+    if due_date.tzinfo is None:
+        due_date = due_date.replace(tzinfo=timezone.utc)
+
+    if now_utc > due_date:
+        days_late = (now_utc - due_date).days
         fine_amount = days_late * 10  # 10 units per day late
         fine = Fine(
             student_id=current_student.id,
