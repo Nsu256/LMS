@@ -21,51 +21,68 @@ from app.schemas import (
 from app.security import decode_token
 
 router = APIRouter(tags=["Notifications"])
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
-def _get_token_subject(credentials: HTTPAuthorizationCredentials) -> int:
-    try:
-        payload = decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    subject = payload.get("sub")
-    if not subject:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-    return int(subject)
+def _get_token_subject(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> int | None:
+    # try:
+    #     payload = decode_token(credentials.credentials)
+    # except ValueError:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    #
+    # subject = payload.get("sub")
+    # if not subject:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    # return int(subject)
+    return None
 
 
 def _get_current_librarian(
-    credentials: HTTPAuthorizationCredentials,
+    credentials: HTTPAuthorizationCredentials | None,
     db: Session,
 ) -> Librarian:
-    subject = _get_token_subject(credentials)
-    librarian = db.query(Librarian).filter(Librarian.id == subject).first()
-    if not librarian or not librarian.is_admin:
+    # subject = _get_token_subject(credentials)
+    # librarian = db.query(Librarian).filter(Librarian.id == subject).first()
+    # if not librarian or not librarian.is_admin:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Only administrators can perform this action",
+    #     )
+    librarian = db.query(Librarian).filter(Librarian.is_admin == True).first()
+    if not librarian:
+        librarian = db.query(Librarian).first()
+    if not librarian:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can perform this action",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Librarian not found",
         )
     return librarian
 
 
 def _get_current_student(
-    credentials: HTTPAuthorizationCredentials,
+    credentials: HTTPAuthorizationCredentials | None,
     db: Session,
 ) -> Student:
-    subject = _get_token_subject(credentials)
-    student = db.query(Student).filter(Student.id == subject).first()
+    # subject = _get_token_subject(credentials)
+    # student = db.query(Student).filter(Student.id == subject).first()
+    # if not student:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Only students can access this endpoint",
+    #     )
+    student = db.query(Student).first()
     if not student:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only students can access this endpoint",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
         )
     return student
 
@@ -73,7 +90,7 @@ def _get_current_student(
 @router.post("/notifications/send-email", response_model=NotificationSendResponse)
 def send_email_notification(
     payload: SendNotificationEmailRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ):
     librarian = _get_current_librarian(credentials, db)
@@ -127,7 +144,7 @@ def send_email_notification(
 
 @router.get("/students/my-notifications", response_model=list[NotificationPublic])
 def get_my_notifications(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ):
     student = _get_current_student(credentials, db)
@@ -146,7 +163,7 @@ def get_notification_logs(
     status_filter: str | None = Query(default=None, pattern="^(sent|failed)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = None,
     db: Session = Depends(get_db),
 ):
     _get_current_librarian(credentials, db)

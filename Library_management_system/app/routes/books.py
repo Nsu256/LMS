@@ -21,7 +21,7 @@ from app.schemas import (
 from app.security import decode_token
 
 router = APIRouter(prefix="/books", tags=["Books"])
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 BORROW_PERIOD_DAYS = 14
 
@@ -56,30 +56,39 @@ def _book_to_public(book: Book, category_map: dict[int, tuple[int | None, str | 
     }
 
 
-def get_current_student(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> Student:
-    """Verify token and extract current student."""
-    try:
-        token_payload = decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+def get_current_student(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> Student:
+    """Authentication checks are bypassed for student endpoints."""
+    # try:
+    #     token_payload = decode_token(credentials.credentials)
+    # except ValueError:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    #
+    # student_id = token_payload.get("sub")
+    # if not student_id:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    #
+    # student = db.query(Student).filter(Student.id == int(student_id)).first()
+    # if not student:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail="Student not found",
+    #     )
 
-    student_id = token_payload.get("sub")
-    if not student_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    student = db.query(Student).filter(Student.id == int(student_id)).first()
+    student = db.query(Student).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Student not found",
         )
-
     return student
 
 

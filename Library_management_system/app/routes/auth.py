@@ -155,14 +155,14 @@ def login_users(payload: StudentLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/logout", response_model=RegisterResponse)
-def logout_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+def logout_users(credentials: HTTPAuthorizationCredentials | None = None):
+    # try:
+    #     decode_token(credentials.credentials)
+    # except ValueError:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
 
     return RegisterResponse(message="Logged out successfully")
 
@@ -225,25 +225,26 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 @router.post("/change-password", response_model=RegisterResponse)
 def change_password(
     payload: ChangePasswordRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = None,
     db: Session = Depends(get_db),
 ):
-    try:
-        token_payload = decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    student_id = token_payload.get("sub")
-    if not student_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    student = db.query(Student).filter(Student.id == int(student_id)).first()
+    # try:
+    #     token_payload = decode_token(credentials.credentials)
+    # except ValueError:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    #
+    # student_id = token_payload.get("sub")
+    # if not student_id:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid token",
+    #     )
+    #
+    # student = db.query(Student).filter(Student.id == int(student_id)).first()
+    student = db.query(Student).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
